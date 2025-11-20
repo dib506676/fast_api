@@ -22,28 +22,24 @@ class BlogUpdate(BaseModel):
     body: Optional[str] = None
     published: Optional[bool] = None
 
-class BlogResponse(BlogBase):
-    """Schema for blog response without comments"""
-    id: int
-    created_at: datetime
-    updated_at: datetime
-    creator: UserInBlog
-    
-    class Config:
-        from_attributes = True
-
 class CommentInBlog(BaseModel):
-    """Minimal comment info for blog detail response"""
+    """Minimal comment info for blog responses"""
     id: int
     content: str
+    author_id: int
     created_at: datetime
-    author: UserInBlog
+    author: Optional[UserInBlog] = None
     
     class Config:
         from_attributes = True
 
-class BlogDetailResponse(BlogResponse):
-    """Schema for blog detail with comments"""
+class BlogResponse(BlogBase):
+    """Schema for blog response"""
+    id: int
+    creator_id: int
+    created_at: datetime
+    updated_at: datetime
+    creator: Optional[UserInBlog] = None
     comments: List[CommentInBlog] = []
     
     class Config:

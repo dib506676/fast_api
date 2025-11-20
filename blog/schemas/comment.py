@@ -14,17 +14,18 @@ class CommentCreate(CommentBase):
     """Schema for creating a comment"""
     blog_id: int
 
-class CommentUpdate(BaseModel):
+class CommentUpdate(CommentBase):
     """Schema for updating a comment"""
-    content: str
+    pass
 
 class CommentResponse(CommentBase):
     """Schema for comment response"""
     id: int
     blog_id: int
+    author_id: int
     created_at: datetime
     updated_at: datetime
-    author: UserInBlog
+    author: Optional[UserInBlog] = None  # Include author info
     
     class Config:
         from_attributes = True

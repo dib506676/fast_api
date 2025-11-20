@@ -2,67 +2,67 @@
 Blog router
 Handles blog CRUD operations
 """
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select
+from sqlalchemy.orm import selectinload
 from typing import List
 
 from blog.core.database import get_session
-from blog.schemas.blog import BlogCreate, BlogUpdate, BlogResponse, BlogDetailResponse
-from blog.services.blog_service import BlogService
-from blog.dependencies.auth import get_current_user
+from blog.schemas.blog import BlogCreate, BlogUpdate, BlogResponse
+from blog.models.blog import Blog
 from blog.models.user import User
+from blog.models.comment import Comment
+from blog.dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/blogs", tags=["Blogs"])
 
-@router.post("/", response_model=BlogResponse, status_code=status.HTTP_201_CREATED)
-async def create_blog(
-    blog_data: BlogCreate,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
-):
-    """
-    Create a new blog post
-    
-    Requires authentication
-    
-    - **title**: Blog title
-    - **body**: Blog content
-    - **published**: Whether blog is published (default: true)
-    """
-    blog_service = BlogService(session)
-    new_blog = await blog_service.create_blog(blog_data, current_user.id)
-    return new_blog
-
 @router.get("/", response_model=List[BlogResponse])
 async def get_all_blogs(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    skip: int = 0,
+    limit: int = 100
 ):
     """
-    Get all published blogs with pagination
-    
-    - **skip**: Number of records to skip (default: 0)
-    - **limit**: Maximum number of records (default: 100)
-    
-    Public endpoint - no authentication required
+    Get all published blogs with creator information
     """
-    blog_service = BlogService(session)
-    blogs = await blog_service.get_all_blogs(skip, limit)
+    # Eager load the creator and comments relationships
+    query = (
+        select(Blog)
+        .options(
+            selectinload(Blog.creator),
+            selectinload(Blog.comments).selectinload(Comment.author)
+        )
+        .where(Blog.published == True)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Blog.created_at.desc())
+    )
+    
+    result = await session.execute(query)
+    blogs = result.scalars().all()
     return blogs
 
-@router.get("/{blog_id}", response_model=BlogDetailResponse)
-async def get_blog_by_id(
+@router.get("/{blog_id}", response_model=BlogResponse)
+async def get_blog(
     blog_id: int,
     session: AsyncSession = Depends(get_session)
 ):
     """
-    Get single blog by ID with all comments
-    
-    Public endpoint - no authentication required
+    Get a specific blog by ID with creator and comments
     """
-    blog_service = BlogService(session)
-    blog = await blog_service.get_blog_by_id(blog_id)
+    # Eager load creator, comments, and comment authors
+    query = (
+        select(Blog)
+        .options(
+            selectinload(Blog.creator),
+            selectinload(Blog.comments).selectinload(Comment.author)
+        )
+        .where(Blog.id == blog_id)
+    )
+    
+    result = await session.execute(query)
+    blog = result.scalar_one_or_none()
     
     if not blog:
         raise HTTPException(
@@ -72,22 +72,97 @@ async def get_blog_by_id(
     
     return blog
 
+@router.post("/", response_model=BlogResponse, status_code=status.HTTP_201_CREATED)
+async def create_blog(
+    blog_data: BlogCreate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Create a new blog post
+    Requires authentication
+    """
+    blog = Blog(
+        title=blog_data.title,
+        body=blog_data.body,
+        published=blog_data.published,
+        creator_id=current_user.id
+    )
+    
+    session.add(blog)
+    await session.commit()
+    await session.refresh(blog)
+    
+    # Reload with creator and comments relationships
+    query = (
+        select(Blog)
+        .options(
+            selectinload(Blog.creator),
+            selectinload(Blog.comments).selectinload(Comment.author)
+        )
+        .where(Blog.id == blog.id)
+    )
+    result = await session.execute(query)
+    blog = result.scalar_one()
+    
+    return blog
+
 @router.put("/{blog_id}", response_model=BlogResponse)
 async def update_blog(
     blog_id: int,
-    blog_update: BlogUpdate,
+    blog_data: BlogUpdate,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)
 ):
     """
     Update a blog post
-    
-    Requires authentication
     Only the creator can update their blog
     """
-    blog_service = BlogService(session)
-    updated_blog = await blog_service.update_blog(blog_id, blog_update, current_user.id)
-    return updated_blog
+    query = (
+        select(Blog)
+        .options(
+            selectinload(Blog.creator),
+            selectinload(Blog.comments).selectinload(Comment.author)
+        )
+        .where(Blog.id == blog_id)
+    )
+    result = await session.execute(query)
+    blog = result.scalar_one_or_none()
+    
+    if not blog:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Blog with id {blog_id} not found"
+        )
+    
+    if blog.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this blog"
+        )
+    
+    # Update fields
+    blog_data_dict = blog_data.model_dump(exclude_unset=True)
+    for key, value in blog_data_dict.items():
+        setattr(blog, key, value)
+    
+    session.add(blog)
+    await session.commit()
+    await session.refresh(blog)
+    
+    # Reload with all relationships
+    query = (
+        select(Blog)
+        .options(
+            selectinload(Blog.creator),
+            selectinload(Blog.comments).selectinload(Comment.author)
+        )
+        .where(Blog.id == blog.id)
+    )
+    result = await session.execute(query)
+    blog = result.scalar_one()
+    
+    return blog
 
 @router.delete("/{blog_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_blog(
@@ -97,10 +172,25 @@ async def delete_blog(
 ):
     """
     Delete a blog post
-    
-    Requires authentication
     Only the creator can delete their blog
     """
-    blog_service = BlogService(session)
-    await blog_service.delete_blog(blog_id, current_user.id)
+    query = select(Blog).where(Blog.id == blog_id)
+    result = await session.execute(query)
+    blog = result.scalar_one_or_none()
+    
+    if not blog:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Blog with id {blog_id} not found"
+        )
+    
+    if blog.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this blog"
+        )
+    
+    await session.delete(blog)
+    await session.commit()
+    
     return None

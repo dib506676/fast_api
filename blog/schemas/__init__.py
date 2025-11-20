@@ -1,6 +1,5 @@
 """
-Schemas package
-Exports all Pydantic schemas
+Schema exports
 """
 from blog.schemas.user import (
     UserBase,
@@ -13,8 +12,8 @@ from blog.schemas.blog import (
     BlogBase,
     BlogCreate,
     BlogUpdate,
-    BlogResponse,
-    BlogDetailResponse
+    BlogResponse,  # ← This exists
+    CommentInBlog   # ← Add this
 )
 from blog.schemas.comment import (
     CommentBase,
@@ -30,8 +29,29 @@ from blog.schemas.auth import (
 )
 
 __all__ = [
-    "UserBase", "UserCreate", "UserUpdate", "UserResponse", "UserInBlog",
-    "BlogBase", "BlogCreate", "BlogUpdate", "BlogResponse", "BlogDetailResponse",
-    "CommentBase", "CommentCreate", "CommentUpdate", "CommentResponse",
-    "LoginRequest", "Token", "TokenData", "GoogleAuthRequest"
+    # User schemas
+    "UserBase",
+    "UserCreate",
+    "UserUpdate",
+    "UserResponse",
+    "UserInBlog",
+    
+    # Blog schemas
+    "BlogBase",
+    "BlogCreate",
+    "BlogUpdate",
+    "BlogResponse",
+    "CommentInBlog",
+    
+    # Comment schemas
+    "CommentBase",
+    "CommentCreate",
+    "CommentUpdate",
+    "CommentResponse",
+    
+    # Auth schemas
+    "LoginRequest",
+    "Token",
+    "TokenData",
+    "GoogleAuthRequest",
 ]
