@@ -9,70 +9,86 @@ from contextlib import asynccontextmanager
 from blog.core.database import create_db_and_tables
 from blog.core.config import settings
 from blog.routers import auth, user, comment
-from blog.routers import blog as blog_router  # ← Use alias to avoid conflict
+from blog.routers import blog as blog_router
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # ← Changed back to 'app'
+async def lifespan(app: FastAPI):
     """
     Lifespan event handler
-    Creates database tables on startup
+    Runs on startup and shutdown
     """
-    # Startup
-    print("Creating database tables...")
+    # Startup: Create database tables
     await create_db_and_tables()
-    print("Database tables created successfully!")
-    
     yield
-    
-    # Shutdown
-    print("Application shutting down...")
+    # Shutdown: Clean up resources (if needed)
 
-# Create FastAPI app (standard name)
-app = FastAPI(  # ← Changed back to 'app'
+# Create FastAPI app
+app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="A modern blog API with authentication, comments, and Google OAuth support",
     version=settings.VERSION,
+    description="A modern blog API with authentication, comments, and Google OAuth support",
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
-# CORS middleware for frontend integration
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # React
-        "http://localhost:5173",  # Vite
-        "http://localhost:5174",  # Vite (alternative)
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://your-frontend-domain.vercel.app",  # Replace with your actual Vercel frontend URL
+        "*"  # Remove this in production for better security
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers (with blog_router alias)
+# Include routers
 app.include_router(auth.router)
 app.include_router(user.router)
-app.include_router(blog_router.router)  # ← Use the alias
+app.include_router(blog_router.router)
 app.include_router(comment.router)
 
-@app.get("/", tags=["Root"])
-def root():
-    """Root endpoint with API information"""
+# Root endpoint
+@app.get("/")
+async def root():
+    """
+    Root endpoint
+    Returns API information
+    """
     return {
-        "message": f"Welcome to {settings.PROJECT_NAME}!",
+        "message": "Welcome to Blog API!",
         "version": settings.VERSION,
         "docs": "/docs",
         "redoc": "/redoc",
-        "endpoints": {
-            "auth": "/auth",
-            "users": "/users",
-            "blogs": "/blogs",
-            "comments": "/comments"
-        }
+        "environment": settings.ENVIRONMENT
     }
 
-@app.get("/health", tags=["Health"])
-def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "environment": settings.ENVIRONMENT}
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint
+    Used for monitoring and deployment verification
+    """
+    return {
+        "status": "healthy",
+        "environment": settings.ENVIRONMENT,
+        "version": settings.VERSION
+    }
+
+# Export app for Vercel
+handler = app
+
+# For local development
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "blog.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True if settings.ENVIRONMENT == "development" else False
+    )
